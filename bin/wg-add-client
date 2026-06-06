@@ -343,6 +343,19 @@ main() {
     client_ip=$(find_next_free_ip)
     info "Assigned IP: $client_ip"
 
+    # Prompt for AllowedIPs (what the client routes through the tunnel)
+    echo ""
+    echo "  AllowedIPs determines what traffic the client sends through the VPN."
+    echo "  Examples:"
+    echo "    10.50.0.0/24         — VPN subnet only (split tunnel)"
+    echo "    0.0.0.0/0, ::/0     — all traffic (full tunnel)"
+    echo ""
+    local allowed_ips_input
+    read -r -p "  AllowedIPs [${CLIENT_ALLOWED_IPS}]: " allowed_ips_input
+    if [[ -n "$allowed_ips_input" ]]; then
+        CLIENT_ALLOWED_IPS="$allowed_ips_input"
+    fi
+
     # Generate keys
     info "Generating client keypair..."
     generate_client_keypair
