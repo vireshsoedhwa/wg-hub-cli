@@ -173,6 +173,21 @@ EOF
 }
 
 install_template() {
+    if [[ -f "$TEMPLATE_DEST" ]]; then
+        if ! diff -q "${SCRIPT_DIR}/templates/client.conf.template" "$TEMPLATE_DEST" &>/dev/null; then
+            echo ""
+            info "Template already exists and has local modifications: $TEMPLATE_DEST"
+            read -r -p "  Overwrite with the default template? [y/N]: " overwrite
+            case "$overwrite" in
+                [yY][eE][sS]|[yY]) ;;
+                *)
+                    info "Keeping existing template."
+                    return
+                    ;;
+            esac
+        fi
+    fi
+
     cp "${SCRIPT_DIR}/templates/client.conf.template" "$TEMPLATE_DEST"
     chmod 644 "$TEMPLATE_DEST"
     info "Installed template: $TEMPLATE_DEST"
