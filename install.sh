@@ -127,7 +127,7 @@ install_config() {
     vpn_subnet_prefix=$(prompt_value "VPN subnet prefix (first 3 octets)" "10.50.0")
     client_start=$(prompt_value "Client IP range start (last octet)" "10")
     client_end=$(prompt_value "Client IP range end (last octet)" "250")
-    server_endpoint=$(prompt_value "Server endpoint (public IP/DNS:port)" "$(curl -s -4 ifconfig.me 2>/dev/null || echo 'your-server.example.com'):51820")
+    server_endpoint=$(prompt_value "Server endpoint (public IP/DNS:port)" "localhost:51820")
     client_allowed_ips=$(prompt_value "Client AllowedIPs (split-tunnel routes)" "${vpn_subnet_prefix}.0/24")
     client_dns=$(prompt_value "Client DNS (leave empty for none)" "")
     reserved_ips=$(prompt_value "Reserved VPN IPs (space-separated)" "${vpn_subnet_prefix}.1 ${vpn_subnet_prefix}.2")
