@@ -85,19 +85,34 @@ The command will:
 
 ### Gateway Mode (Site-to-Site)
 
-For clients that are routers with a LAN behind them (e.g. OPNsense), use `--gateway` to tell the server to route the remote subnet through this peer:
+For clients that are routers with a LAN behind them (e.g. OPNsense), use `--gateway` with `--pubkey` to add the peer using a public key generated on the gateway itself:
+
+```bash
+sudo wg-add-client home-opnsense --gateway 192.168.200.0/24 --pubkey <gateway-public-key>
+```
+
+**Recommended workflow:**
+
+1. Generate a WireGuard keypair **on the gateway** (e.g. in OPNsense's WireGuard UI).
+2. Copy the gateway's **public key**.
+3. Run `wg-add-client` on the hub with `--pubkey` so the private key never leaves the gateway.
+4. Configure the gateway's WireGuard peer using the hub details printed after the command.
+
+With `--pubkey`, no client config file or QR code is generated — the gateway manages its own config.
+
+**Without `--pubkey`** (keys generated on the hub):
 
 ```bash
 sudo wg-add-client home-opnsense --gateway 192.168.200.0/24
 ```
 
+This generates a keypair on the hub and creates a client config file, which you'd then transfer to the gateway. Less secure since the private key leaves the hub.
+
 Multiple subnets can be comma-separated:
 
 ```bash
-sudo wg-add-client office-router --gateway 192.168.1.0/24,10.0.0.0/24
+sudo wg-add-client office-router --gateway 192.168.1.0/24,10.0.0.0/24 --pubkey <key>
 ```
-
-In gateway mode, the server's `AllowedIPs` for the peer is set to `<vpn-ip>/32, <remote-subnets>`. You'll also be prompted for the client-side AllowedIPs.
 
 ## List Clients
 

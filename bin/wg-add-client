@@ -2,7 +2,7 @@
 #
 # wg-add-client — Add a new WireGuard client peer to the hub server.
 #
-# Usage: sudo wg-add-client <client-name> [--gateway <remote-subnet>[,<subnet>...]]
+# Usage: sudo wg-add-client <client-name> [--gateway <remote-subnet> --pubkey <public-key>]
 #
 
 set -euo pipefail
@@ -109,7 +109,7 @@ Run install.sh to restore the template."
 validate_client_name() {
     local name="$1"
 
-    [[ -z "$name" ]] && die "Usage: wg-add-client <client-name> [--gateway <remote-subnet>]"
+    [[ -z "$name" ]] && die "Usage: wg-add-client <client-name> [--gateway <remote-subnet> --pubkey <public-key>]"
     [[ "$name" =~ ^[a-zA-Z0-9._-]+$ ]] || die "Invalid client name '$name'. Use only letters, numbers, hyphens, underscores, and dots."
     [[ ${#name} -le 64 ]] || die "Client name too long (max 64 characters)."
 }
@@ -299,6 +299,31 @@ write_registry_entry() {
 # Output
 # ---------------------------------------------------------------------------
 
+print_gateway_info() {
+    local name="$1"
+    local client_ip="$2"
+    local server_allowed_ips="$3"
+
+    echo ""
+    echo "=========================================="
+    echo " Gateway peer added successfully!"
+    echo "=========================================="
+    echo ""
+    echo "  Name:              $name"
+    echo "  VPN IP:            $client_ip"
+    echo "  Server AllowedIPs: $server_allowed_ips"
+    echo ""
+    echo "  Configure the gateway's WireGuard peer with:"
+    echo "    Endpoint:    $(grep -m1 'SERVER_ENDPOINT' "$CONFIG_FILE" 2>/dev/null | cut -d'"' -f2 || echo '<hub-ip>:51820')"
+    echo "    Public Key:  ${SERVER_PUBLIC_KEY}"
+    echo "    Allowed IPs: ${CLIENT_ALLOWED_IPS}"
+    echo ""
+    echo "  No client config file was created — the gateway"
+    echo "  manages its own private key and config."
+    echo ""
+    echo "=========================================="
+}
+
 print_client_info() {
     local name="$1"
     local client_ip="$2"
@@ -329,6 +354,7 @@ main() {
     local client_name=""
     local gateway_mode=false
     local gateway_subnets=""
+    local provided_pubkey=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -339,6 +365,14 @@ main() {
                     die "--gateway requires a remote subnet, e.g.: --gateway 192.168.200.0/24"
                 fi
                 gateway_subnets="$1"
+                shift
+                ;;
+            --pubkey)
+                shift
+                if [[ $# -eq 0 || "$1" == --* ]]; then
+                    die "--pubkey requires a WireGuard public key"
+                fi
+                provided_pubkey="$1"
                 shift
                 ;;
             --source-only)
@@ -353,6 +387,11 @@ main() {
                 ;;
         esac
     done
+
+    # Validate flag combinations
+    if [[ -n "$provided_pubkey" && "$gateway_mode" != true ]]; then
+        die "--pubkey can only be used with --gateway"
+    fi
 
     # Prerequisite checks
     check_root
@@ -387,31 +426,27 @@ main() {
         # Gateway mode: server routes the remote LAN(s) through this peer
         server_peer_allowed_ips="${client_ip}/32, ${gateway_subnets}"
         info "Gateway mode: routing ${gateway_subnets} via this peer"
-
-        # For a gateway, the client typically needs to reach the VPN subnet
-        echo ""
-        echo "  Client AllowedIPs — what traffic the GATEWAY routes through the VPN."
-        echo "  Default includes the VPN subnet so the gateway can reach other peers."
-        echo ""
-        local allowed_ips_input
-        read -r -p "  Client AllowedIPs [${CLIENT_ALLOWED_IPS}]: " allowed_ips_input
-        if [[ -n "$allowed_ips_input" ]]; then
-            CLIENT_ALLOWED_IPS="$allowed_ips_input"
-        fi
     fi
-    # Standard mode: use config defaults, no prompts
 
-    # Generate keys
-    info "Generating client keypair..."
-    generate_client_keypair
+    if [[ -n "$provided_pubkey" ]]; then
+        # Gateway with external public key — no keygen, no client config, no QR
+        CLIENT_PUBLIC_KEY="$provided_pubkey"
+        info "Using provided public key: ${CLIENT_PUBLIC_KEY}"
+    else
+        # Generate keys locally
+        info "Generating client keypair..."
+        generate_client_keypair
+    fi
 
     # Derive server public key from wg0.conf
     derive_server_public_key
 
-    # Create client config
-    info "Creating client config..."
-    local config_path
-    config_path=$(create_client_config "$client_name" "$client_ip")
+    # Create client config (skip for gateway with external key)
+    local config_path=""
+    if [[ -z "$provided_pubkey" ]]; then
+        info "Creating client config..."
+        config_path=$(create_client_config "$client_name" "$client_ip")
+    fi
 
     # Backup and modify server config
     info "Backing up server config..."
@@ -430,7 +465,11 @@ main() {
     write_registry_entry "$client_name" "$client_ip"
 
     # Output
-    print_client_info "$client_name" "$client_ip" "$config_path"
+    if [[ -n "$provided_pubkey" ]]; then
+        print_gateway_info "$client_name" "$client_ip" "$server_peer_allowed_ips"
+    else
+        print_client_info "$client_name" "$client_ip" "$config_path"
+    fi
 }
 
 # Allow sourcing for tests without executing main
