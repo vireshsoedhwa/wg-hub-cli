@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-CONFIG_FILE="/etc/wg-hub-cli/config.env"
+CONFIG_FILE="${WG_HUB_CLI_CONFIG:-/etc/wg-hub-cli/config.env}"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -27,6 +27,7 @@ info() {
 # ---------------------------------------------------------------------------
 
 check_root() {
+    [[ "${WG_HUB_CLI_TESTING:-}" == "1" ]] && return 0
     [[ $EUID -eq 0 ]] || die "This script must be run as root (use sudo)."
 }
 
@@ -128,8 +129,10 @@ main() {
     ' "$WG_CONF" > "$tmp_conf"
 
     # Remove any trailing blank lines that may have accumulated
-    sed -i'' -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$tmp_conf" 2>/dev/null || true
-    mv "$tmp_conf" "$WG_CONF"
+    local tmp_clean="${tmp_conf}.clean"
+    sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$tmp_conf" > "$tmp_clean" 2>/dev/null || cp "$tmp_conf" "$tmp_clean"
+    mv "$tmp_clean" "$WG_CONF"
+    rm -f "$tmp_conf"
     chmod 600 "$WG_CONF"
 
     # 3. Apply WireGuard config
@@ -152,7 +155,9 @@ main() {
 
     # 4. Update registry status to "removed"
     info "Updating registry..."
-    sed -i'' "s|^${name}	${ip}	${pubkey}	active	|${name}	${ip}	${pubkey}	removed	|" "$REGISTRY"
+    local tmp_registry="${REGISTRY}.tmp"
+    sed "s|^${name}	${ip}	${pubkey}	active	|${name}	${ip}	${pubkey}	removed	|" "$REGISTRY" > "$tmp_registry"
+    mv "$tmp_registry" "$REGISTRY"
 
     # 5. Remove client config file
     local config_path="${CLIENT_DIR}/${name}.conf"
@@ -168,4 +173,7 @@ main() {
     echo ""
 }
 
-main "$@"
+# Allow sourcing for tests without executing main
+if [[ "${1:-}" != "--source-only" ]]; then
+    main "$@"
+fi
