@@ -58,7 +58,12 @@ main() {
         active_count=$(awk -F'\t' '$4 == "active"' "$REGISTRY" | wc -l | tr -d ' ')
     fi
 
-    if [[ "$client_count" -eq 0 && ! -d "$CLIENT_DIR" ]]; then
+    local file_count=0
+    if [[ -d "$CLIENT_DIR" ]]; then
+        file_count=$(find "$CLIENT_DIR" -type f | wc -l | tr -d ' ')
+    fi
+
+    if [[ "$client_count" -eq 0 && "$file_count" -eq 0 ]]; then
         echo "No clients found. Nothing to reset."
         return 0
     fi
@@ -121,19 +126,13 @@ main() {
         die "WireGuard restart failed. Backup saved at: ${backup_path}"
     fi
 
-    # 4. Delete all client config files
-    info "Deleting client configs..."
+    # 4. Delete everything in the clients directory
+    info "Deleting client directory contents..."
     if [[ -d "$CLIENT_DIR" ]]; then
-        local conf_count
-        conf_count=$(find "$CLIENT_DIR" -name "*.conf" -type f | wc -l | tr -d ' ')
-        rm -f "${CLIENT_DIR}"/*.conf
-        info "Removed $conf_count client config file(s)."
-    fi
-
-    # 5. Delete registry
-    if [[ -f "$REGISTRY" ]]; then
-        rm -f "$REGISTRY"
-        info "Deleted registry."
+        local file_count
+        file_count=$(find "$CLIENT_DIR" -type f | wc -l | tr -d ' ')
+        rm -rf "${CLIENT_DIR:?}"/*
+        info "Removed $file_count file(s) from $CLIENT_DIR."
     fi
 
     echo ""
