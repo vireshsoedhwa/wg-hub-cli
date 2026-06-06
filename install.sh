@@ -28,6 +28,14 @@ info() {
     echo ":: $*"
 }
 
+prompt_value() {
+    local prompt="$1"
+    local default="$2"
+    local result
+    read -r -p "  ${prompt} [${default}]: " result
+    echo "${result:-$default}"
+}
+
 # ---------------------------------------------------------------------------
 # Checks
 # ---------------------------------------------------------------------------
@@ -94,14 +102,70 @@ install_dependencies() {
 install_config() {
     mkdir -p "$CONFIG_DIR"
 
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        cp "${SCRIPT_DIR}/config/wg-hub-cli.example.env" "$CONFIG_FILE"
-        chmod 600 "$CONFIG_FILE"
-        info "Installed example config: $CONFIG_FILE"
-        info ">>> You MUST edit this file before using wg-add-client. <<<"
-    else
-        info "Config already exists: $CONFIG_FILE (not overwritten)"
+    if [[ -f "$CONFIG_FILE" ]]; then
+        info "Config already exists: $CONFIG_FILE"
+        read -r -p "  Overwrite with new values? [y/N]: " overwrite
+        case "$overwrite" in
+            [yY][eE][sS]|[yY]) ;;
+            *)
+                info "Keeping existing config."
+                return
+                ;;
+        esac
     fi
+
+    echo ""
+    echo "--- Configuration ---"
+    echo "Press Enter to accept the default shown in brackets."
+    echo ""
+
+    local wg_interface wg_conf vpn_subnet_prefix client_start client_end
+    local server_endpoint client_allowed_ips client_dns reserved_ips apply_mode
+
+    wg_interface=$(prompt_value "WireGuard interface" "wg0")
+    wg_conf=$(prompt_value "WireGuard config path" "/etc/wireguard/${wg_interface}.conf")
+    vpn_subnet_prefix=$(prompt_value "VPN subnet prefix (first 3 octets)" "10.50.0")
+    client_start=$(prompt_value "Client IP range start (last octet)" "10")
+    client_end=$(prompt_value "Client IP range end (last octet)" "250")
+    server_endpoint=$(prompt_value "Server endpoint (public IP/DNS:port)" "$(curl -s -4 ifconfig.me 2>/dev/null || echo 'your-server.example.com'):51820")
+    client_allowed_ips=$(prompt_value "Client AllowedIPs (split-tunnel routes)" "${vpn_subnet_prefix}.0/24")
+    client_dns=$(prompt_value "Client DNS (leave empty for none)" "")
+    reserved_ips=$(prompt_value "Reserved VPN IPs (space-separated)" "${vpn_subnet_prefix}.1 ${vpn_subnet_prefix}.2")
+    apply_mode=$(prompt_value "Apply mode (restart or syncconf)" "restart")
+
+    cat > "$CONFIG_FILE" <<EOF
+# WireGuard interface and config
+WG_INTERFACE="${wg_interface}"
+WG_CONF="${wg_conf}"
+
+# Generated client configs and registry
+CLIENT_DIR="/etc/wireguard/clients"
+REGISTRY="/etc/wireguard/clients/registry.tsv"
+
+# VPN addressing
+VPN_SUBNET_PREFIX="${vpn_subnet_prefix}"
+CLIENT_START="${client_start}"
+CLIENT_END="${client_end}"
+
+# Server endpoint reachable by clients
+SERVER_ENDPOINT="${server_endpoint}"
+
+# Client routes
+CLIENT_ALLOWED_IPS="${client_allowed_ips}"
+
+# Optional DNS pushed to clients
+CLIENT_DNS="${client_dns}"
+
+# Reserved VPN IPs
+RESERVED_IPS="${reserved_ips}"
+
+# WireGuard restart mode
+APPLY_MODE="${apply_mode}"
+EOF
+
+    chmod 600 "$CONFIG_FILE"
+    echo ""
+    info "Config written: $CONFIG_FILE"
 }
 
 install_template() {
@@ -143,10 +207,8 @@ main() {
     echo "=== Installation complete ==="
     echo ""
     echo "Next steps:"
-    echo "  1. Edit the config:  sudo nano $CONFIG_FILE"
-    echo "  2. Set SERVER_ENDPOINT to your server's public IP or DNS name."
-    echo "  3. Adjust VPN_SUBNET_PREFIX, CLIENT_ALLOWED_IPS, and RESERVED_IPS as needed."
-    echo "  4. Add a client:     sudo wg-add-client <client-name>"
+    echo "  1. Review config if needed:  sudo nano $CONFIG_FILE"
+    echo "  2. Add a client:             sudo wg-add-client <client-name>"
     echo ""
 }
 

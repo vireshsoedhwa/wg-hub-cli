@@ -1,8 +1,8 @@
 # Never commit real WireGuard secrets or generated configs
 *.key
 *.conf
-*.env
 config.env
+!config/wg-hub-cli.example.env
 clients/
 registry.tsv
 
