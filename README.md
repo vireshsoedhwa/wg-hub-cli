@@ -53,13 +53,15 @@ sudo ./install.sh
 
 ## Configure
 
-Edit the config file:
+The installer prompts for all settings interactively with sensible defaults. Just press Enter to accept a default, or type a custom value.
+
+To edit the config later:
 
 ```bash
 sudo nano /etc/wg-hub-cli/config.env
 ```
 
-At minimum, set:
+Key settings:
 
 - `SERVER_ENDPOINT` — your server's public IP/DNS and port.
 - `CLIENT_ALLOWED_IPS` — routes pushed to clients.
@@ -141,6 +143,18 @@ On your phone:
 - **v0.3** — dry-run mode, config validation, rollback on failed restart
 - **v0.4** — split/full tunnel profiles, custom AllowedIPs, optional DNS/MTU
 - **v0.5** — multi-interface support
+
+## Testing
+
+```bash
+./test/run-tests.sh
+```
+
+Tests use [BATS](https://github.com/bats-core/bats-core) with mock commands for `wg`, `systemctl`, etc. After cloning, initialize submodules:
+
+```bash
+git submodule update --init --recursive
+```
 
 ## License
 
