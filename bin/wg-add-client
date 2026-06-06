@@ -2,7 +2,7 @@
 #
 # wg-add-client — Add a new WireGuard client peer to the hub server.
 #
-# Usage: sudo wg-add-client <client-name>
+# Usage: sudo wg-add-client <client-name> [--gateway <remote-subnet>[,<subnet>...]]
 #
 
 set -euo pipefail
@@ -109,7 +109,7 @@ Run install.sh to restore the template."
 validate_client_name() {
     local name="$1"
 
-    [[ -z "$name" ]] && die "Usage: wg-add-client <client-name>"
+    [[ -z "$name" ]] && die "Usage: wg-add-client <client-name> [--gateway <remote-subnet>]"
     [[ "$name" =~ ^[a-zA-Z0-9._-]+$ ]] || die "Invalid client name '$name'. Use only letters, numbers, hyphens, underscores, and dots."
     [[ ${#name} -le 64 ]] || die "Client name too long (max 64 characters)."
 }
@@ -325,7 +325,34 @@ print_client_info() {
 # ---------------------------------------------------------------------------
 
 main() {
-    local client_name="${1:-}"
+    # Parse arguments
+    local client_name=""
+    local gateway_mode=false
+    local gateway_subnets=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --gateway)
+                gateway_mode=true
+                shift
+                if [[ $# -eq 0 || "$1" == --* ]]; then
+                    die "--gateway requires a remote subnet, e.g.: --gateway 192.168.200.0/24"
+                fi
+                gateway_subnets="$1"
+                shift
+                ;;
+            --source-only)
+                return 0
+                ;;
+            -*)
+                die "Unknown option: $1"
+                ;;
+            *)
+                client_name="$1"
+                shift
+                ;;
+        esac
+    done
 
     # Prerequisite checks
     check_root
@@ -353,31 +380,26 @@ main() {
     client_ip=$(find_next_free_ip)
     info "Assigned IP: $client_ip"
 
-    # Prompt for client-side AllowedIPs (what traffic the client sends through the tunnel)
-    echo ""
-    echo "  Client AllowedIPs — what traffic the CLIENT routes through the VPN."
-    echo "  Examples:"
-    echo "    10.50.0.0/24             — VPN subnet only (split tunnel)"
-    echo "    0.0.0.0/0, ::/0         — all traffic (full tunnel)"
-    echo ""
-    local allowed_ips_input
-    read -r -p "  Client AllowedIPs [${CLIENT_ALLOWED_IPS}]: " allowed_ips_input
-    if [[ -n "$allowed_ips_input" ]]; then
-        CLIENT_ALLOWED_IPS="$allowed_ips_input"
-    fi
-
-    # Prompt for server-side AllowedIPs (what the server accepts/routes from this peer)
+    # Set AllowedIPs based on client type
     local server_peer_allowed_ips="${client_ip}/32"
-    echo ""
-    echo "  Server AllowedIPs — what IPs the SERVER routes to this peer."
-    echo "  For a simple client, the default (its VPN IP) is correct."
-    echo "  For a site-to-site gateway, add the remote LAN, e.g.: ${client_ip}/32, 192.168.200.0/24"
-    echo ""
-    local server_allowed_input
-    read -r -p "  Server AllowedIPs [${server_peer_allowed_ips}]: " server_allowed_input
-    if [[ -n "$server_allowed_input" ]]; then
-        server_peer_allowed_ips="$server_allowed_input"
+
+    if [[ "$gateway_mode" == true ]]; then
+        # Gateway mode: server routes the remote LAN(s) through this peer
+        server_peer_allowed_ips="${client_ip}/32, ${gateway_subnets}"
+        info "Gateway mode: routing ${gateway_subnets} via this peer"
+
+        # For a gateway, the client typically needs to reach the VPN subnet
+        echo ""
+        echo "  Client AllowedIPs — what traffic the GATEWAY routes through the VPN."
+        echo "  Default includes the VPN subnet so the gateway can reach other peers."
+        echo ""
+        local allowed_ips_input
+        read -r -p "  Client AllowedIPs [${CLIENT_ALLOWED_IPS}]: " allowed_ips_input
+        if [[ -n "$allowed_ips_input" ]]; then
+            CLIENT_ALLOWED_IPS="$allowed_ips_input"
+        fi
     fi
+    # Standard mode: use config defaults, no prompts
 
     # Generate keys
     info "Generating client keypair..."

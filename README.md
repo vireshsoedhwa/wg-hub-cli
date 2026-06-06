@@ -83,6 +83,22 @@ The command will:
 6. Save the client in the registry.
 7. Print a QR code for the WireGuard mobile app.
 
+### Gateway Mode (Site-to-Site)
+
+For clients that are routers with a LAN behind them (e.g. OPNsense), use `--gateway` to tell the server to route the remote subnet through this peer:
+
+```bash
+sudo wg-add-client home-opnsense --gateway 192.168.200.0/24
+```
+
+Multiple subnets can be comma-separated:
+
+```bash
+sudo wg-add-client office-router --gateway 192.168.1.0/24,10.0.0.0/24
+```
+
+In gateway mode, the server's `AllowedIPs` for the peer is set to `<vpn-ip>/32, <remote-subnets>`. You'll also be prompted for the client-side AllowedIPs.
+
 ## List Clients
 
 ```bash
