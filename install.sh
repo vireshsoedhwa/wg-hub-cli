@@ -223,7 +223,12 @@ main() {
     echo ""
     echo "Next steps:"
     echo "  1. Review config if needed:  sudo nano $CONFIG_FILE"
-    echo "  2. Add a client:             sudo wg-add-client <client-name>"
+    echo ""
+    echo "Available commands:"
+    echo "  sudo wg-add-client <name>    Add a new client peer"
+    echo "  sudo wg-list-clients         List all clients"
+    echo "  sudo wg-show-client <name>   Show client details + live status"
+    echo "  sudo wg-remove-client <name> Remove a client peer"
     echo ""
 }
 
