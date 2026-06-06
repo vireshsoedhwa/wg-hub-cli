@@ -10,7 +10,10 @@ set -euo pipefail
 CONFIG_DIR="/etc/wg-hub-cli"
 CONFIG_FILE="${CONFIG_DIR}/config.env"
 TEMPLATE_DEST="${CONFIG_DIR}/client.conf.template"
-BIN_DEST="/usr/local/sbin/wg-add-client"
+BIN_ADD="/usr/local/sbin/wg-add-client"
+BIN_LIST="/usr/local/sbin/wg-list-clients"
+BIN_SHOW="/usr/local/sbin/wg-show-client"
+BIN_REMOVE="/usr/local/sbin/wg-remove-client"
 CLIENT_DIR="/etc/wireguard/clients"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -175,9 +178,21 @@ install_template() {
 }
 
 install_bin() {
-    cp "${SCRIPT_DIR}/bin/wg-add-client" "$BIN_DEST"
-    chmod 755 "$BIN_DEST"
-    info "Installed command: $BIN_DEST"
+    cp "${SCRIPT_DIR}/bin/wg-add-client" "$BIN_ADD"
+    chmod 755 "$BIN_ADD"
+    info "Installed command: $BIN_ADD"
+
+    cp "${SCRIPT_DIR}/bin/wg-list-clients" "$BIN_LIST"
+    chmod 755 "$BIN_LIST"
+    info "Installed command: $BIN_LIST"
+
+    cp "${SCRIPT_DIR}/bin/wg-show-client" "$BIN_SHOW"
+    chmod 755 "$BIN_SHOW"
+    info "Installed command: $BIN_SHOW"
+
+    cp "${SCRIPT_DIR}/bin/wg-remove-client" "$BIN_REMOVE"
+    chmod 755 "$BIN_REMOVE"
+    info "Installed command: $BIN_REMOVE"
 }
 
 create_client_dir() {

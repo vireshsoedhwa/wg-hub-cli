@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+#
+# wg-list-clients — List all WireGuard client peers managed by wg-hub-cli.
+#
+# Usage: sudo wg-list-clients
+#
+
+set -euo pipefail
+
+CONFIG_FILE="/etc/wg-hub-cli/config.env"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+die() {
+    echo "ERROR: $*" >&2
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Checks
+# ---------------------------------------------------------------------------
+
+check_root() {
+    [[ $EUID -eq 0 ]] || die "This script must be run as root (use sudo)."
+}
+
+check_config_file() {
+    [[ -f "$CONFIG_FILE" ]] || die "Config file not found: $CONFIG_FILE
+Run install.sh first."
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+main() {
+    check_root
+    check_config_file
+
+    # shellcheck source=/dev/null
+    source "$CONFIG_FILE"
+
+    if [[ ! -f "$REGISTRY" ]]; then
+        echo "No clients registered yet."
+        exit 0
+    fi
+
+    local total active inactive
+    total=$(tail -n +2 "$REGISTRY" | wc -l | tr -d ' ')
+    active=$(tail -n +2 "$REGISTRY" | awk -F'\t' '$4 == "active"' | wc -l | tr -d ' ')
+    inactive=$(tail -n +2 "$REGISTRY" | awk -F'\t' '$4 != "active"' | wc -l | tr -d ' ')
+
+    echo ""
+    echo "=== WireGuard Clients (${total} total, ${active} active, ${inactive} removed) ==="
+    echo ""
+
+    # Print header
+    printf "%-20s %-16s %-10s %s\n" "NAME" "VPN IP" "STATUS" "CREATED"
+    printf "%-20s %-16s %-10s %s\n" "----" "------" "------" "-------"
+
+    # Print each client
+    while IFS=$'\t' read -r name ip pubkey status created; do
+        printf "%-20s %-16s %-10s %s\n" "$name" "$ip" "$status" "$created"
+    done < <(tail -n +2 "$REGISTRY")
+
+    echo ""
+}
+
+main "$@"

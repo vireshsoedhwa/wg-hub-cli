@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+#
+# wg-remove-client — Remove a WireGuard client peer from the hub server.
+#
+# Usage: sudo wg-remove-client <client-name>
+#
+
+set -euo pipefail
+
+CONFIG_FILE="/etc/wg-hub-cli/config.env"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+die() {
+    echo "ERROR: $*" >&2
+    exit 1
+}
+
+info() {
+    echo ":: $*"
+}
+
+# ---------------------------------------------------------------------------
+# Checks
+# ---------------------------------------------------------------------------
+
+check_root() {
+    [[ $EUID -eq 0 ]] || die "This script must be run as root (use sudo)."
+}
+
+check_config_file() {
+    [[ -f "$CONFIG_FILE" ]] || die "Config file not found: $CONFIG_FILE
+Run install.sh first."
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+main() {
+    local client_name="${1:-}"
+
+    check_root
+    check_config_file
+
+    # shellcheck source=/dev/null
+    source "$CONFIG_FILE"
+
+    [[ -z "$client_name" ]] && die "Usage: wg-remove-client <client-name>"
+
+    if [[ ! -f "$REGISTRY" ]]; then
+        die "No registry found. No clients have been added yet."
+    fi
+
+    # Look up client in registry
+    local entry
+    entry=$(grep "^${client_name}	" "$REGISTRY" || true)
+
+    if [[ -z "$entry" ]]; then
+        die "Client '$client_name' not found in registry."
+    fi
+
+    local name ip pubkey status created
+    IFS=$'\t' read -r name ip pubkey status created <<< "$entry"
+
+    if [[ "$status" == "removed" ]]; then
+        die "Client '$client_name' is already removed."
+    fi
+
+    # Confirmation prompt
+    echo ""
+    echo "About to remove client:"
+    echo ""
+    echo "  Name:       $name"
+    echo "  VPN IP:     $ip"
+    echo "  Public Key: $pubkey"
+    echo ""
+    read -r -p "Are you sure? [y/N]: " confirm
+    case "$confirm" in
+        [yY][eE][sS]|[yY]) ;;
+        *) die "Aborted." ;;
+    esac
+
+    # 1. Backup server config
+    info "Backing up server config..."
+    local backup_path="${WG_CONF}.bak.$(date +%Y%m%d-%H%M%S)"
+    cp "$WG_CONF" "$backup_path"
+    info "Backup: $backup_path"
+
+    # 2. Remove peer block from server config
+    info "Removing peer from server config..."
+    # The peer block starts with [Peer] and a comment with the client name,
+    # followed by PublicKey and AllowedIPs lines. We remove based on public key.
+    local tmp_conf="${WG_CONF}.tmp"
+    awk -v key="$pubkey" '
+        /^\[Peer\]/ {
+            peer_block = $0 "\n"
+            in_peer = 1
+            next
+        }
+        in_peer {
+            peer_block = peer_block $0 "\n"
+            if ($0 ~ /^\[/ || $0 == "") {
+                # End of peer block (next section or blank line after last field)
+                # Check if this peer matches
+                if (peer_block ~ key) {
+                    # Skip this peer block; also skip trailing blank line
+                    in_peer = 0
+                    peer_block = ""
+                    if ($0 ~ /^\[/) print  # print next section header if we hit one
+                    next
+                } else {
+                    printf "%s", peer_block
+                    in_peer = 0
+                    peer_block = ""
+                }
+            }
+            next
+        }
+        { print }
+        END {
+            if (in_peer && peer_block != "" && !(peer_block ~ key)) {
+                printf "%s", peer_block
+            }
+        }
+    ' "$WG_CONF" > "$tmp_conf"
+
+    # Remove any trailing blank lines that may have accumulated
+    sed -i'' -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$tmp_conf" 2>/dev/null || true
+    mv "$tmp_conf" "$WG_CONF"
+    chmod 600 "$WG_CONF"
+
+    # 3. Apply WireGuard config
+    info "Applying WireGuard config..."
+    if [[ "$APPLY_MODE" == "syncconf" ]]; then
+        wg syncconf "$WG_INTERFACE" <(wg-quick strip "$WG_INTERFACE")
+    else
+        systemctl restart "wg-quick@${WG_INTERFACE}"
+    fi
+
+    if ! systemctl is-active --quiet "wg-quick@${WG_INTERFACE}"; then
+        echo ""
+        echo "WARNING: WireGuard failed to restart!"
+        echo "Restore backup with:"
+        echo "  cp ${backup_path} ${WG_CONF}"
+        echo "  systemctl restart wg-quick@${WG_INTERFACE}"
+        echo ""
+        die "WireGuard restart failed. Backup saved at: ${backup_path}"
+    fi
+
+    # 4. Update registry status to "removed"
+    info "Updating registry..."
+    sed -i'' "s|^${name}	${ip}	${pubkey}	active	|${name}	${ip}	${pubkey}	removed	|" "$REGISTRY"
+
+    # 5. Remove client config file
+    local config_path="${CLIENT_DIR}/${name}.conf"
+    if [[ -f "$config_path" ]]; then
+        rm -f "$config_path"
+        info "Removed client config: $config_path"
+    fi
+
+    echo ""
+    echo "=========================================="
+    echo " Client '$name' removed successfully."
+    echo "=========================================="
+    echo ""
+}
+
+main "$@"

@@ -81,6 +81,30 @@ The command will:
 6. Save the client in the registry.
 7. Print a QR code for the WireGuard mobile app.
 
+## List Clients
+
+```bash
+sudo wg-list-clients
+```
+
+Prints a table of all clients with their VPN IP, status, and creation date.
+
+## Show Client Details
+
+```bash
+sudo wg-show-client iphone
+```
+
+Shows full details for a client including live WireGuard status (endpoint, last handshake, transfer). Optionally displays the QR code again.
+
+## Remove a Client
+
+```bash
+sudo wg-remove-client iphone
+```
+
+Removes the peer from the server config, restarts WireGuard, deletes the client config file, and marks the client as removed in the registry.
+
 ## Scan QR Code
 
 On your phone:
@@ -103,14 +127,17 @@ On your phone:
 ```text
 /etc/wg-hub-cli/config.env              Server settings
 /etc/wg-hub-cli/client.conf.template    Client config template
-/usr/local/sbin/wg-add-client           The CLI command
+/usr/local/sbin/wg-add-client           Add a client
+/usr/local/sbin/wg-list-clients         List all clients
+/usr/local/sbin/wg-show-client          Show client details
+/usr/local/sbin/wg-remove-client        Remove a client
 /etc/wireguard/clients/                 Generated client configs
 /etc/wireguard/clients/registry.tsv     Client registry
 ```
 
 ## Roadmap
 
-- **v0.2** — `wg-list-clients`, `wg-show-client`, `wg-remove-client`
+- ~~**v0.2** — `wg-list-clients`, `wg-show-client`, `wg-remove-client`~~ ✓
 - **v0.3** — dry-run mode, config validation, rollback on failed restart
 - **v0.4** — split/full tunnel profiles, custom AllowedIPs, optional DNS/MTU
 - **v0.5** — multi-interface support

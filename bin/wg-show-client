@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+#
+# wg-show-client — Show details for a specific WireGuard client.
+#
+# Usage: sudo wg-show-client <client-name>
+#
+
+set -euo pipefail
+
+CONFIG_FILE="/etc/wg-hub-cli/config.env"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+die() {
+    echo "ERROR: $*" >&2
+    exit 1
+}
+
+info() {
+    echo ":: $*"
+}
+
+# ---------------------------------------------------------------------------
+# Checks
+# ---------------------------------------------------------------------------
+
+check_root() {
+    [[ $EUID -eq 0 ]] || die "This script must be run as root (use sudo)."
+}
+
+check_config_file() {
+    [[ -f "$CONFIG_FILE" ]] || die "Config file not found: $CONFIG_FILE
+Run install.sh first."
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+main() {
+    local client_name="${1:-}"
+
+    check_root
+    check_config_file
+
+    # shellcheck source=/dev/null
+    source "$CONFIG_FILE"
+
+    [[ -z "$client_name" ]] && die "Usage: wg-show-client <client-name>"
+
+    if [[ ! -f "$REGISTRY" ]]; then
+        die "No registry found. No clients have been added yet."
+    fi
+
+    # Look up client in registry
+    local entry
+    entry=$(grep "^${client_name}	" "$REGISTRY" || true)
+
+    if [[ -z "$entry" ]]; then
+        die "Client '$client_name' not found in registry."
+    fi
+
+    local name ip pubkey status created
+    IFS=$'\t' read -r name ip pubkey status created <<< "$entry"
+
+    echo ""
+    echo "=== Client: $name ==="
+    echo ""
+    echo "  VPN IP:       $ip"
+    echo "  Public Key:   $pubkey"
+    echo "  Status:       $status"
+    echo "  Created:      $created"
+
+    # Show config file path
+    local config_path="${CLIENT_DIR}/${name}.conf"
+    if [[ -f "$config_path" ]]; then
+        echo "  Config File:  $config_path"
+    else
+        echo "  Config File:  (not found)"
+    fi
+
+    # Show live WireGuard status for this peer
+    echo ""
+    echo "--- Live Status ---"
+    echo ""
+
+    local wg_output
+    wg_output=$(wg show "$WG_INTERFACE" 2>/dev/null || true)
+
+    if [[ -z "$wg_output" ]]; then
+        echo "  Interface $WG_INTERFACE is not running."
+    else
+        # Find the peer section by public key
+        local peer_section
+        peer_section=$(echo "$wg_output" | awk -v key="$pubkey" '
+            /^peer:/ { found=($2 == key) }
+            found { print }
+            found && /^$/ { exit }
+        ')
+
+        if [[ -n "$peer_section" ]]; then
+            local endpoint latest_handshake transfer_rx transfer_tx
+            endpoint=$(echo "$peer_section" | grep "endpoint:" | awk '{print $2}')
+            latest_handshake=$(echo "$peer_section" | grep "latest handshake:" | sed 's/.*latest handshake: //')
+            transfer_rx=$(echo "$peer_section" | grep "transfer:" | awk '{print $2, $3}')
+            transfer_tx=$(echo "$peer_section" | grep "transfer:" | awk '{print $5, $6}')
+
+            echo "  Endpoint:         ${endpoint:-(none)}"
+            echo "  Latest Handshake: ${latest_handshake:-(never)}"
+            echo "  Transfer:         ↓ ${transfer_rx:-(none)} / ↑ ${transfer_tx:-(none)}"
+        else
+            echo "  Peer not found in live interface (may not have connected yet)."
+        fi
+    fi
+
+    # Show QR code option
+    if [[ -f "$config_path" && "$status" == "active" ]]; then
+        echo ""
+        read -r -p "  Show QR code? [y/N]: " show_qr
+        case "$show_qr" in
+            [yY][eE][sS]|[yY])
+                echo ""
+                qrencode -t ansiutf8 < "$config_path"
+                ;;
+        esac
+    fi
+
+    echo ""
+}
+
+main "$@"
