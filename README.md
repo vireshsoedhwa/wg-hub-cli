@@ -107,6 +107,14 @@ sudo wg-remove-client iphone
 
 Removes the peer from the server config, restarts WireGuard, deletes the client config file, and marks the client as removed in the registry.
 
+## Reset All Clients
+
+```bash
+sudo wg-reset-clients
+```
+
+Removes all peers from the server config, deletes all client configs and the registry, and restarts WireGuard. A backup of `wg0.conf` is created first. Requires typing `yes` to confirm.
+
 ## Scan QR Code
 
 On your phone:
@@ -133,6 +141,7 @@ On your phone:
 /usr/local/sbin/wg-list-clients         List all clients
 /usr/local/sbin/wg-show-client          Show client details
 /usr/local/sbin/wg-remove-client        Remove a client
+/usr/local/sbin/wg-reset-clients       Remove all clients (full reset)
 /etc/wireguard/clients/                 Generated client configs
 /etc/wireguard/clients/registry.tsv     Client registry
 ```

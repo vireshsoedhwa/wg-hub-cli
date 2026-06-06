@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+#
+# wg-reset-clients — Remove all WireGuard client peers and reset to a clean state.
+#
+# Usage: sudo wg-reset-clients
+#
+
+set -euo pipefail
+
+CONFIG_FILE="${WG_HUB_CLI_CONFIG:-/etc/wg-hub-cli/config.env}"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+die() {
+    echo "ERROR: $*" >&2
+    exit 1
+}
+
+info() {
+    echo ":: $*"
+}
+
+# ---------------------------------------------------------------------------
+# Checks
+# ---------------------------------------------------------------------------
+
+check_root() {
+    [[ "${WG_HUB_CLI_TESTING:-}" == "1" ]] && return 0
+    [[ $EUID -eq 0 ]] || die "This script must be run as root (use sudo)."
+}
+
+check_config_file() {
+    [[ -f "$CONFIG_FILE" ]] || die "Config file not found: $CONFIG_FILE
+Run install.sh first."
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+main() {
+    check_root
+    check_config_file
+
+    # shellcheck source=/dev/null
+    source "$CONFIG_FILE"
+
+    # Count clients
+    local client_count=0
+    if [[ -f "$REGISTRY" ]]; then
+        client_count=$(tail -n +2 "$REGISTRY" | wc -l | tr -d ' ')
+    fi
+
+    local active_count=0
+    if [[ -f "$REGISTRY" ]]; then
+        active_count=$(awk -F'\t' '$4 == "active"' "$REGISTRY" | wc -l | tr -d ' ')
+    fi
+
+    if [[ "$client_count" -eq 0 && ! -d "$CLIENT_DIR" ]]; then
+        echo "No clients found. Nothing to reset."
+        return 0
+    fi
+
+    # Show what will be removed
+    echo ""
+    echo "=========================================="
+    echo " WARNING: This will remove ALL clients!"
+    echo "=========================================="
+    echo ""
+    echo "  Registry entries:  $client_count"
+    echo "  Active clients:    $active_count"
+    echo "  Client dir:        $CLIENT_DIR"
+    echo "  Server config:     $WG_CONF"
+    echo ""
+    echo "  This will:"
+    echo "    - Remove all [Peer] blocks from $WG_CONF"
+    echo "    - Delete all client configs in $CLIENT_DIR"
+    echo "    - Delete the client registry"
+    echo "    - Restart WireGuard"
+    echo ""
+
+    read -r -p "  Are you sure? Type 'yes' to confirm: " response
+    if [[ "$response" != "yes" ]]; then
+        die "Aborted."
+    fi
+
+    # 1. Backup server config
+    info "Backing up server config..."
+    local backup_path="${WG_CONF}.bak.$(date +%Y%m%d-%H%M%S)"
+    cp "$WG_CONF" "$backup_path"
+    info "Backup: $backup_path"
+
+    # 2. Strip all [Peer] blocks from wg0.conf, keep only [Interface]
+    info "Removing all peers from server config..."
+    local tmp_conf="${WG_CONF}.tmp"
+    awk '
+        /^\[Peer\]/ { in_peer=1; next }
+        in_peer && /^\[/ { in_peer=0 }
+        in_peer { next }
+        { print }
+    ' "$WG_CONF" > "$tmp_conf"
+
+    # Remove trailing blank lines
+    local tmp_clean="${tmp_conf}.clean"
+    sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$tmp_conf" > "$tmp_clean" 2>/dev/null || cp "$tmp_conf" "$tmp_clean"
+    mv "$tmp_clean" "$WG_CONF"
+    rm -f "$tmp_conf"
+    chmod 600 "$WG_CONF"
+
+    # 3. Restart WireGuard
+    info "Restarting WireGuard..."
+    if ! systemctl restart "wg-quick@${WG_INTERFACE}"; then
+        echo ""
+        echo "WARNING: WireGuard failed to restart!"
+        echo "Restore backup with:"
+        echo "  cp ${backup_path} ${WG_CONF}"
+        echo "  systemctl restart wg-quick@${WG_INTERFACE}"
+        echo ""
+        die "WireGuard restart failed. Backup saved at: ${backup_path}"
+    fi
+
+    # 4. Delete all client config files
+    info "Deleting client configs..."
+    if [[ -d "$CLIENT_DIR" ]]; then
+        local conf_count
+        conf_count=$(find "$CLIENT_DIR" -name "*.conf" -type f | wc -l | tr -d ' ')
+        rm -f "${CLIENT_DIR}"/*.conf
+        info "Removed $conf_count client config file(s)."
+    fi
+
+    # 5. Delete registry
+    if [[ -f "$REGISTRY" ]]; then
+        rm -f "$REGISTRY"
+        info "Deleted registry."
+    fi
+
+    echo ""
+    echo "=========================================="
+    echo " All clients removed. Clean state restored."
+    echo "=========================================="
+    echo ""
+}
+
+# Allow sourcing for tests without executing main
+if [[ "${1:-}" != "--source-only" ]]; then
+    main "$@"
+fi

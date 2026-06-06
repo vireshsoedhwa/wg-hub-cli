@@ -21,6 +21,7 @@ shellcheck -x "${SCRIPT_DIR}/bin/wg-add-client"
 shellcheck -x "${SCRIPT_DIR}/bin/wg-list-clients"
 shellcheck -x "${SCRIPT_DIR}/bin/wg-show-client"
 shellcheck -x "${SCRIPT_DIR}/bin/wg-remove-client"
+shellcheck -x "${SCRIPT_DIR}/bin/wg-reset-clients"
 shellcheck -x "${SCRIPT_DIR}/install.sh"
 
 echo ""
