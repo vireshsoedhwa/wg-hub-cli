@@ -239,14 +239,14 @@ backup_server_config() {
 
 append_peer_to_server() {
     local name="$1"
-    local client_ip="$2"
+    local allowed_ips="$2"
 
     cat >> "$WG_CONF" <<EOF
 
 [Peer]
 # ${name}
 PublicKey = ${CLIENT_PUBLIC_KEY}
-AllowedIPs = ${client_ip}/32
+AllowedIPs = ${allowed_ips}
 EOF
 }
 
@@ -353,17 +353,30 @@ main() {
     client_ip=$(find_next_free_ip)
     info "Assigned IP: $client_ip"
 
-    # Prompt for AllowedIPs (what the client routes through the tunnel)
+    # Prompt for client-side AllowedIPs (what traffic the client sends through the tunnel)
     echo ""
-    echo "  AllowedIPs determines what traffic the client sends through the VPN."
+    echo "  Client AllowedIPs — what traffic the CLIENT routes through the VPN."
     echo "  Examples:"
-    echo "    10.50.0.0/24         — VPN subnet only (split tunnel)"
-    echo "    0.0.0.0/0, ::/0     — all traffic (full tunnel)"
+    echo "    10.50.0.0/24             — VPN subnet only (split tunnel)"
+    echo "    0.0.0.0/0, ::/0         — all traffic (full tunnel)"
     echo ""
     local allowed_ips_input
-    read -r -p "  AllowedIPs [${CLIENT_ALLOWED_IPS}]: " allowed_ips_input
+    read -r -p "  Client AllowedIPs [${CLIENT_ALLOWED_IPS}]: " allowed_ips_input
     if [[ -n "$allowed_ips_input" ]]; then
         CLIENT_ALLOWED_IPS="$allowed_ips_input"
+    fi
+
+    # Prompt for server-side AllowedIPs (what the server accepts/routes from this peer)
+    local server_peer_allowed_ips="${client_ip}/32"
+    echo ""
+    echo "  Server AllowedIPs — what IPs the SERVER routes to this peer."
+    echo "  For a simple client, the default (its VPN IP) is correct."
+    echo "  For a site-to-site gateway, add the remote LAN, e.g.: ${client_ip}/32, 192.168.200.0/24"
+    echo ""
+    local server_allowed_input
+    read -r -p "  Server AllowedIPs [${server_peer_allowed_ips}]: " server_allowed_input
+    if [[ -n "$server_allowed_input" ]]; then
+        server_peer_allowed_ips="$server_allowed_input"
     fi
 
     # Generate keys
@@ -385,7 +398,7 @@ main() {
     info "Backup: $backup_path"
 
     info "Adding peer to server config..."
-    append_peer_to_server "$client_name" "$client_ip"
+    append_peer_to_server "$client_name" "$server_peer_allowed_ips"
 
     # Apply changes
     info "Applying WireGuard config..."

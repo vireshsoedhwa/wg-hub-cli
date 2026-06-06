@@ -309,7 +309,7 @@ EOF
 
     CLIENT_PUBLIC_KEY="Y2xpZW50X3B1YmxpY19rZXk="
 
-    append_peer_to_server "newpeer" "10.50.0.10"
+    append_peer_to_server "newpeer" "10.50.0.10/32"
 
     run cat "$WG_CONF"
     assert_output --partial "[Peer]"
