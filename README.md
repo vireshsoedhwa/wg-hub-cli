@@ -83,6 +83,16 @@ The command will:
 6. Save the client in the registry.
 7. Print a QR code for the WireGuard mobile app.
 
+### Custom AllowedIPs Per Client
+
+By default, clients get the `CLIENT_ALLOWED_IPS` from config.env. To override for a specific client:
+
+```bash
+sudo wg-add-client laptop --allowed-ips '10.50.0.0/24, 192.168.200.0/24'
+```
+
+This is useful when some clients need access to site-to-site subnets while others don't.
+
 ### Gateway Mode (Site-to-Site)
 
 For clients that are routers with a LAN behind them (e.g. OPNsense), use `--gateway` with `--pubkey` to add the peer using a public key generated on the gateway itself:
@@ -173,8 +183,9 @@ On your phone:
 
 - ~~**v0.2** — `wg-list-clients`, `wg-show-client`, `wg-remove-client`~~ ✓
 - **v0.3** — dry-run mode, config validation, rollback on failed restart
-- **v0.4** — split/full tunnel profiles, custom AllowedIPs, optional DNS/MTU
-- **v0.5** — multi-interface support
+- ~~**v0.4** — custom AllowedIPs per client~~ ✓
+- **v0.5** — split/full tunnel profiles, optional DNS/MTU per client
+- **v0.6** — multi-interface support
 
 ## Testing
 

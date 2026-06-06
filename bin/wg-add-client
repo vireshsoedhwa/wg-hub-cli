@@ -2,7 +2,7 @@
 #
 # wg-add-client — Add a new WireGuard client peer to the hub server.
 #
-# Usage: sudo wg-add-client <client-name> [--gateway <remote-subnet> --pubkey <public-key>]
+# Usage: sudo wg-add-client <client-name> [--allowed-ips <cidrs>] [--gateway <remote-subnet> --pubkey <public-key>]
 #
 
 set -euo pipefail
@@ -109,7 +109,7 @@ Run install.sh to restore the template."
 validate_client_name() {
     local name="$1"
 
-    [[ -z "$name" ]] && die "Usage: wg-add-client <client-name> [--gateway <remote-subnet> --pubkey <public-key>]"
+    [[ -z "$name" ]] && die "Usage: wg-add-client <client-name> [--allowed-ips <cidrs>] [--gateway <remote-subnet> --pubkey <public-key>]"
     [[ "$name" =~ ^[a-zA-Z0-9._-]+$ ]] || die "Invalid client name '$name'. Use only letters, numbers, hyphens, underscores, and dots."
     [[ ${#name} -le 64 ]] || die "Client name too long (max 64 characters)."
 }
@@ -359,6 +359,7 @@ main() {
     local gateway_mode=false
     local gateway_subnets=""
     local provided_pubkey=""
+    local custom_allowed_ips=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -377,6 +378,14 @@ main() {
                     die "--pubkey requires a WireGuard public key"
                 fi
                 provided_pubkey="$1"
+                shift
+                ;;
+            --allowed-ips)
+                shift
+                if [[ $# -eq 0 || "$1" == --* ]]; then
+                    die "--allowed-ips requires a comma-separated list of CIDRs, e.g.: --allowed-ips '10.50.0.0/24, 192.168.200.0/24'"
+                fi
+                custom_allowed_ips="$1"
                 shift
                 ;;
             --source-only)
@@ -399,6 +408,9 @@ main() {
     if [[ -n "$provided_pubkey" && "$gateway_mode" != true ]]; then
         die "--pubkey can only be used with --gateway"
     fi
+    if [[ -n "$custom_allowed_ips" && "$gateway_mode" == true ]]; then
+        die "--allowed-ips cannot be used with --gateway"
+    fi
 
     # Prerequisite checks
     check_root
@@ -411,6 +423,11 @@ main() {
     check_dependencies
     check_template_file
     check_wireguard_interface
+
+    # Override CLIENT_ALLOWED_IPS if --allowed-ips was provided
+    if [[ -n "$custom_allowed_ips" ]]; then
+        CLIENT_ALLOWED_IPS="$custom_allowed_ips"
+    fi
 
     # Validate input
     validate_client_name "$client_name"
