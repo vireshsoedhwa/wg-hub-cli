@@ -230,11 +230,13 @@ main() {
     echo "  1. Review config if needed:  sudo nano $CONFIG_FILE"
     echo ""
     echo "Available commands:"
-    echo "  sudo wg-add-client <name>    Add a new client peer"
-    echo "  sudo wg-list-clients         List all clients"
-    echo "  sudo wg-show-client <name>   Show client details + live status"
-    echo "  sudo wg-remove-client <name> Remove a client peer"
-    echo "  sudo wg-reset-clients        Remove ALL clients (full reset)"
+    echo "  sudo wg-add-client <name>                          Add a client (phone, laptop)"
+    echo "  sudo wg-add-client <name> --gateway <subnet> \\    Add a site-to-site gateway"
+    echo "                            --pubkey <key>"
+    echo "  sudo wg-list-clients                               List all clients"
+    echo "  sudo wg-show-client <name>                         Show client details + live status"
+    echo "  sudo wg-remove-client <name>                       Remove a client peer"
+    echo "  sudo wg-reset-clients                              Remove ALL clients (full reset)"
     echo ""
 }
 
