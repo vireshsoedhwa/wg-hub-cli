@@ -98,15 +98,7 @@ sudo wg-add-client home-opnsense --gateway 192.168.200.0/24 --pubkey <gateway-pu
 3. Run `wg-add-client` on the hub with `--pubkey` so the private key never leaves the gateway.
 4. Configure the gateway's WireGuard peer using the hub details printed after the command.
 
-With `--pubkey`, no client config file or QR code is generated — the gateway manages its own config.
-
-**Without `--pubkey`** (keys generated on the hub):
-
-```bash
-sudo wg-add-client home-opnsense --gateway 192.168.200.0/24
-```
-
-This generates a keypair on the hub and creates a client config file, which you'd then transfer to the gateway. Less secure since the private key leaves the hub.
+No client config file or QR code is generated — the gateway manages its own config. `--pubkey` is mandatory with `--gateway`.
 
 Multiple subnets can be comma-separated:
 

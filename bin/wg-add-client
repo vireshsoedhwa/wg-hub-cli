@@ -389,6 +389,9 @@ main() {
     done
 
     # Validate flag combinations
+    if [[ "$gateway_mode" == true && -z "$provided_pubkey" ]]; then
+        die "--gateway requires --pubkey. Generate the keypair on the gateway and provide its public key."
+    fi
     if [[ -n "$provided_pubkey" && "$gateway_mode" != true ]]; then
         die "--pubkey can only be used with --gateway"
     fi
