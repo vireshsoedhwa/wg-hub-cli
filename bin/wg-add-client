@@ -118,7 +118,17 @@ check_duplicate_client() {
     local name="$1"
 
     if [[ -f "$REGISTRY" ]] && grep -q "^${name}	" "$REGISTRY"; then
-        die "Client '$name' already exists in registry."
+        # Allow re-adding if the client was previously removed
+        local status
+        status=$(awk -F'\t' -v n="$name" '$1 == n { print $4 }' "$REGISTRY")
+        if [[ "$status" == "removed" ]]; then
+            # Remove the old registry entry so a fresh one can be written
+            local tmp_registry="${REGISTRY}.tmp"
+            grep -v "^${name}	" "$REGISTRY" > "$tmp_registry"
+            mv "$tmp_registry" "$REGISTRY"
+        else
+            die "Client '$name' already exists in registry."
+        fi
     fi
 
     if [[ -f "${CLIENT_DIR}/${name}.conf" ]]; then

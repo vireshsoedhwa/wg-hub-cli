@@ -93,6 +93,20 @@ setup() {
     assert_success
 }
 
+@test "allows re-adding a previously removed client" {
+    source "${BATS_TEST_DIRNAME}/../bin/wg-add-client" --source-only 2>/dev/null || true
+
+    echo -e "name\tip\tpublic_key\tstatus\tcreated_at" > "$REGISTRY"
+    echo -e "phone\t10.50.0.10\tKEY123\tremoved\t2024-01-01T00:00:00Z" >> "$REGISTRY"
+
+    run check_duplicate_client "phone"
+    assert_success
+
+    # Old entry should be removed from registry
+    run grep "^phone" "$REGISTRY"
+    assert_failure
+}
+
 @test "rejects client if config file already exists" {
     source "${BATS_TEST_DIRNAME}/../bin/wg-add-client" --source-only 2>/dev/null || true
 
