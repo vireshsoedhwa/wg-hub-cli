@@ -1,0 +1,10 @@
+[Interface]
+PrivateKey = {{CLIENT_PRIVATE_KEY}}
+Address = {{CLIENT_ADDRESS}}/24
+{{CLIENT_DNS_LINE}}
+
+[Peer]
+PublicKey = {{SERVER_PUBLIC_KEY}}
+Endpoint = {{SERVER_ENDPOINT}}
+AllowedIPs = {{CLIENT_ALLOWED_IPS}}
+PersistentKeepalive = 25

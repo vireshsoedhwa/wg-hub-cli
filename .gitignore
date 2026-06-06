@@ -1,0 +1,17 @@
+# Never commit real WireGuard secrets or generated configs
+*.key
+*.conf
+*.env
+config.env
+clients/
+registry.tsv
+
+# Local testing
+tmp/
+.DS_Store
+
+# Editor files
+*.swp
+*.swo
+.vscode/
+.idea/

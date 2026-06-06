@@ -1,0 +1,377 @@
+#!/usr/bin/env bash
+#
+# wg-add-client — Add a new WireGuard client peer to the hub server.
+#
+# Usage: sudo wg-add-client <client-name>
+#
+
+set -euo pipefail
+
+CONFIG_FILE="/etc/wg-hub-cli/config.env"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE_FILE="/etc/wg-hub-cli/client.conf.template"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+die() {
+    echo "ERROR: $*" >&2
+    exit 1
+}
+
+info() {
+    echo ":: $*"
+}
+
+# ---------------------------------------------------------------------------
+# Prerequisite checks
+# ---------------------------------------------------------------------------
+
+check_root() {
+    [[ $EUID -eq 0 ]] || die "This script must be run as root (use sudo)."
+}
+
+check_dependencies() {
+    local missing=()
+    for cmd in wg wg-quick qrencode grep awk sed; do
+        if ! command -v "$cmd" &>/dev/null; then
+            missing+=("$cmd")
+        fi
+    done
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        die "Missing required commands: ${missing[*]}
+Install them with: sudo apt install wireguard wireguard-tools qrencode"
+    fi
+}
+
+check_wireguard_interface() {
+    if [[ ! -f "$WG_CONF" ]]; then
+        echo ""
+        echo "WireGuard config not found at: $WG_CONF"
+        echo ""
+        echo "It looks like WireGuard is not yet configured on this server."
+        echo "Would you like to create a new WireGuard interface?"
+        echo ""
+        read -r -p "Create $WG_INTERFACE now? [y/N]: " response
+        case "$response" in
+            [yY][eE][sS]|[yY])
+                create_wireguard_interface
+                ;;
+            *)
+                die "Cannot proceed without a WireGuard interface. Set up $WG_CONF manually or re-run this script."
+                ;;
+        esac
+    fi
+}
+
+create_wireguard_interface() {
+    info "Generating server keypair..."
+    local server_private_key server_public_key
+
+    server_private_key=$(wg genkey)
+    server_public_key=$(echo "$server_private_key" | wg pubkey)
+
+    info "Creating $WG_CONF..."
+    cat > "$WG_CONF" <<EOF
+[Interface]
+Address = ${VPN_SUBNET_PREFIX}.1/24
+ListenPort = $(echo "$SERVER_ENDPOINT" | awk -F: '{print $NF}' | grep -E '^[0-9]+$' || echo "51820")
+PrivateKey = ${server_private_key}
+
+PostUp = iptables -A FORWARD -i ${WG_INTERFACE} -o ${WG_INTERFACE} -j ACCEPT
+PostDown = iptables -D FORWARD -i ${WG_INTERFACE} -o ${WG_INTERFACE} -j ACCEPT
+EOF
+
+    chmod 600 "$WG_CONF"
+    info "Server public key: $server_public_key"
+    info "Starting $WG_INTERFACE..."
+    systemctl enable "wg-quick@${WG_INTERFACE}" --now
+    info "WireGuard interface $WG_INTERFACE is up."
+}
+
+check_config_file() {
+    [[ -f "$CONFIG_FILE" ]] || die "Config file not found: $CONFIG_FILE
+Run install.sh first, then edit the config."
+}
+
+check_template_file() {
+    [[ -f "$TEMPLATE_FILE" ]] || die "Template file not found: $TEMPLATE_FILE
+Run install.sh to restore the template."
+}
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+validate_client_name() {
+    local name="$1"
+
+    [[ -z "$name" ]] && die "Usage: wg-add-client <client-name>"
+    [[ "$name" =~ ^[a-zA-Z0-9._-]+$ ]] || die "Invalid client name '$name'. Use only letters, numbers, hyphens, underscores, and dots."
+    [[ ${#name} -le 64 ]] || die "Client name too long (max 64 characters)."
+}
+
+check_duplicate_client() {
+    local name="$1"
+
+    if [[ -f "$REGISTRY" ]] && grep -q "^${name}	" "$REGISTRY"; then
+        die "Client '$name' already exists in registry."
+    fi
+
+    if [[ -f "${CLIENT_DIR}/${name}.conf" ]]; then
+        die "Client config already exists: ${CLIENT_DIR}/${name}.conf"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# IP assignment
+# ---------------------------------------------------------------------------
+
+find_next_free_ip() {
+    local candidate
+
+    for i in $(seq "$CLIENT_START" "$CLIENT_END"); do
+        candidate="${VPN_SUBNET_PREFIX}.${i}"
+
+        # Skip reserved IPs
+        local is_reserved=false
+        for reserved in $RESERVED_IPS; do
+            if [[ "$candidate" == "$reserved" ]]; then
+                is_reserved=true
+                break
+            fi
+        done
+        [[ "$is_reserved" == "true" ]] && continue
+
+        # Skip IPs already in wg0.conf
+        if grep -q "${candidate}/32" "$WG_CONF" 2>/dev/null; then
+            continue
+        fi
+
+        # Skip IPs already in registry
+        if [[ -f "$REGISTRY" ]] && grep -q "	${candidate}	" "$REGISTRY"; then
+            continue
+        fi
+
+        echo "$candidate"
+        return 0
+    done
+
+    die "No free VPN IPs available in range ${VPN_SUBNET_PREFIX}.${CLIENT_START} - ${VPN_SUBNET_PREFIX}.${CLIENT_END}."
+}
+
+# ---------------------------------------------------------------------------
+# Key generation and server public key derivation
+# ---------------------------------------------------------------------------
+
+generate_client_keypair() {
+    CLIENT_PRIVATE_KEY=$(wg genkey)
+    CLIENT_PUBLIC_KEY=$(echo "$CLIENT_PRIVATE_KEY" | wg pubkey)
+}
+
+derive_server_public_key() {
+    local server_private_key
+    server_private_key=$(grep -m1 "^PrivateKey" "$WG_CONF" | awk -F'= ' '{print $2}' | tr -d ' ')
+
+    [[ -z "$server_private_key" ]] && die "Cannot read server PrivateKey from $WG_CONF"
+
+    SERVER_PUBLIC_KEY=$(echo "$server_private_key" | wg pubkey)
+}
+
+# ---------------------------------------------------------------------------
+# Config generation
+# ---------------------------------------------------------------------------
+
+create_client_config() {
+    local name="$1"
+    local client_ip="$2"
+    local config_path="${CLIENT_DIR}/${name}.conf"
+
+    # Build DNS line (empty if not configured)
+    local dns_line=""
+    if [[ -n "$CLIENT_DNS" ]]; then
+        dns_line="DNS = ${CLIENT_DNS}"
+    fi
+
+    # Build sed expression — delete the DNS placeholder line if empty, otherwise substitute
+    local dns_sed_expr
+    if [[ -n "$CLIENT_DNS" ]]; then
+        dns_sed_expr="s|{{CLIENT_DNS_LINE}}|${dns_line}|g"
+    else
+        dns_sed_expr="/{{CLIENT_DNS_LINE}}/d"
+    fi
+
+    # Render template
+    sed -e "s|{{CLIENT_PRIVATE_KEY}}|${CLIENT_PRIVATE_KEY}|g" \
+        -e "s|{{CLIENT_ADDRESS}}|${client_ip}|g" \
+        -e "$dns_sed_expr" \
+        -e "s|{{SERVER_PUBLIC_KEY}}|${SERVER_PUBLIC_KEY}|g" \
+        -e "s|{{SERVER_ENDPOINT}}|${SERVER_ENDPOINT}|g" \
+        -e "s|{{CLIENT_ALLOWED_IPS}}|${CLIENT_ALLOWED_IPS}|g" \
+        "$TEMPLATE_FILE" > "$config_path"
+
+    chmod 600 "$config_path"
+    echo "$config_path"
+}
+
+# ---------------------------------------------------------------------------
+# Server config modification
+# ---------------------------------------------------------------------------
+
+backup_server_config() {
+    local backup_path="${WG_CONF}.bak.$(date +%Y%m%d-%H%M%S)"
+    cp "$WG_CONF" "$backup_path"
+    echo "$backup_path"
+}
+
+append_peer_to_server() {
+    local name="$1"
+    local client_ip="$2"
+
+    cat >> "$WG_CONF" <<EOF
+
+[Peer]
+# ${name}
+PublicKey = ${CLIENT_PUBLIC_KEY}
+AllowedIPs = ${client_ip}/32
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# WireGuard reload
+# ---------------------------------------------------------------------------
+
+apply_wireguard_config() {
+    local backup_path="$1"
+
+    if [[ "$APPLY_MODE" == "syncconf" ]]; then
+        wg syncconf "$WG_INTERFACE" <(wg-quick strip "$WG_INTERFACE")
+    else
+        systemctl restart "wg-quick@${WG_INTERFACE}"
+    fi
+
+    # Verify the interface is up
+    if ! systemctl is-active --quiet "wg-quick@${WG_INTERFACE}"; then
+        echo ""
+        echo "WARNING: WireGuard failed to restart!"
+        echo "Restore backup with:"
+        echo "  cp ${backup_path} ${WG_CONF}"
+        echo "  systemctl restart wg-quick@${WG_INTERFACE}"
+        echo ""
+        die "WireGuard restart failed. Backup saved at: ${backup_path}"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------------
+
+write_registry_entry() {
+    local name="$1"
+    local client_ip="$2"
+
+    # Create registry with header if it doesn't exist
+    if [[ ! -f "$REGISTRY" ]]; then
+        echo -e "name\tip\tpublic_key\tstatus\tcreated_at" > "$REGISTRY"
+        chmod 600 "$REGISTRY"
+    fi
+
+    local timestamp
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    echo -e "${name}\t${client_ip}\t${CLIENT_PUBLIC_KEY}\tactive\t${timestamp}" >> "$REGISTRY"
+}
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+
+print_client_info() {
+    local name="$1"
+    local client_ip="$2"
+    local config_path="$3"
+
+    echo ""
+    echo "=========================================="
+    echo " Client added successfully!"
+    echo "=========================================="
+    echo ""
+    echo "  Name:       $name"
+    echo "  VPN IP:     $client_ip"
+    echo "  Config:     $config_path"
+    echo ""
+    echo "--- QR Code (scan with WireGuard app) ---"
+    echo ""
+    qrencode -t ansiutf8 < "$config_path"
+    echo ""
+    echo "=========================================="
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+main() {
+    local client_name="${1:-}"
+
+    # Prerequisite checks
+    check_root
+    check_config_file
+
+    # Load config
+    # shellcheck source=/dev/null
+    source "$CONFIG_FILE"
+
+    check_dependencies
+    check_template_file
+    check_wireguard_interface
+
+    # Validate input
+    validate_client_name "$client_name"
+    check_duplicate_client "$client_name"
+
+    # Create client directory if needed
+    mkdir -p "$CLIENT_DIR"
+    chmod 700 "$CLIENT_DIR"
+
+    # Find free IP
+    info "Finding next available IP..."
+    local client_ip
+    client_ip=$(find_next_free_ip)
+    info "Assigned IP: $client_ip"
+
+    # Generate keys
+    info "Generating client keypair..."
+    generate_client_keypair
+
+    # Derive server public key from wg0.conf
+    derive_server_public_key
+
+    # Create client config
+    info "Creating client config..."
+    local config_path
+    config_path=$(create_client_config "$client_name" "$client_ip")
+
+    # Backup and modify server config
+    info "Backing up server config..."
+    local backup_path
+    backup_path=$(backup_server_config)
+    info "Backup: $backup_path"
+
+    info "Adding peer to server config..."
+    append_peer_to_server "$client_name" "$client_ip"
+
+    # Apply changes
+    info "Applying WireGuard config..."
+    apply_wireguard_config "$backup_path"
+
+    # Write registry
+    write_registry_entry "$client_name" "$client_ip"
+
+    # Output
+    print_client_info "$client_name" "$client_ip" "$config_path"
+}
+
+main "$@"

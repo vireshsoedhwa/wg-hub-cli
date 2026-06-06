@@ -1,1 +1,120 @@
 # wg-hub-cli
+
+A tiny SSH-only WireGuard client manager for a Linux WireGuard hub server.
+
+## What It Is
+
+A Bash CLI that lets you add WireGuard client peers by running a single command over SSH. It auto-assigns IPs, generates keys, updates the server config, and prints a QR code for mobile import.
+
+## What It Is Not
+
+- Not a web UI or dashboard.
+- Not a replacement for Netmaker, wg-easy, or Tailscale.
+- Not a full VPN orchestration platform.
+
+## Example Topology
+
+```text
+Remote laptop / phone / tablet
+        ↓ WireGuard
+WireGuard hub server (runs wg-hub-cli)
+        ↓ optional site-to-site peer
+Home router / firewall / LAN
+        ↓
+NAS / internal services
+```
+
+## Features (v0.1)
+
+- **Auto IP assignment** — picks the next free VPN IP from a configurable range.
+- **Duplicate prevention** — rejects duplicate client names and IPs.
+- **Keypair generation** — creates a WireGuard keypair per client.
+- **Server public key derivation** — reads the server private key at runtime, no manual config needed.
+- **Config from template** — renders client configs from a separate template file.
+- **Backup before edit** — backs up `wg0.conf` before every change.
+- **WireGuard reload** — restarts or syncconfs the interface automatically.
+- **QR code output** — prints a scannable QR code for mobile devices.
+- **Registry** — tracks all clients in a simple TSV file.
+- **Prerequisite checks** — verifies WireGuard is installed and configured, offers to bootstrap if not.
+
+## Requirements
+
+- Debian 12+ / Ubuntu 22.04+ (other distros may work)
+- `wireguard`, `wireguard-tools`, `qrencode`
+- `bash`, `grep`, `awk`, `sed`, `systemd`
+
+## Install
+
+```bash
+git clone https://github.com/vireshsoedhwa/wg-hub-cli.git
+cd wg-hub-cli
+sudo ./install.sh
+```
+
+## Configure
+
+Edit the config file:
+
+```bash
+sudo nano /etc/wg-hub-cli/config.env
+```
+
+At minimum, set:
+
+- `SERVER_ENDPOINT` — your server's public IP/DNS and port.
+- `CLIENT_ALLOWED_IPS` — routes pushed to clients.
+- `RESERVED_IPS` — IPs that should never be assigned to clients.
+
+## Add a Client
+
+```bash
+sudo wg-add-client iphone
+```
+
+The command will:
+
+1. Pick the next available VPN IP.
+2. Generate a WireGuard keypair.
+3. Create a client config file.
+4. Backup and update the server config.
+5. Restart WireGuard.
+6. Save the client in the registry.
+7. Print a QR code for the WireGuard mobile app.
+
+## Scan QR Code
+
+On your phone:
+
+1. Open the WireGuard app.
+2. Tap **+** → **Create from QR code**.
+3. Scan the QR code printed in your terminal.
+4. Activate the tunnel.
+
+## Security Notes
+
+- All management is SSH-only. No ports are exposed for administration.
+- Client configs and private keys are stored with `600` permissions.
+- The client directory is `700` (root-only access).
+- Never commit generated configs or keys to version control (`.gitignore` is preconfigured).
+- Use split-tunnel by default to avoid routing all traffic through the VPN unintentionally.
+
+## File Layout
+
+```text
+/etc/wg-hub-cli/config.env              Server settings
+/etc/wg-hub-cli/client.conf.template    Client config template
+/usr/local/sbin/wg-add-client           The CLI command
+/etc/wireguard/clients/                 Generated client configs
+/etc/wireguard/clients/registry.tsv     Client registry
+```
+
+## Roadmap
+
+- **v0.2** — `wg-list-clients`, `wg-show-client`, `wg-remove-client`
+- **v0.3** — dry-run mode, config validation, rollback on failed restart
+- **v0.4** — split/full tunnel profiles, custom AllowedIPs, optional DNS/MTU
+- **v0.5** — multi-interface support
+
+## License
+
+MIT
