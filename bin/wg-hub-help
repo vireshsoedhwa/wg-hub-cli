@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#
+# wg-hub-help — Print wg-hub-cli usage instructions.
+#
+
+CONFIG_FILE="${WG_HUB_CLI_CONFIG:-/etc/wg-hub-cli/config.env}"
+
+echo ""
+echo "=== wg-hub-cli — WireGuard Hub Manager ==="
+echo ""
+echo "Available commands:"
+echo "  sudo wg-add-client <name>                          Add a client (phone, laptop)"
+echo "  sudo wg-add-client <name> --allowed-ips <cidrs>    Add a client with custom routes"
+echo "  sudo wg-add-client <name> --gateway <subnet> \\    Add a site-to-site gateway"
+echo "                            --pubkey <key>"
+echo "  sudo wg-list-clients                               List all clients"
+echo "  sudo wg-show-client <name>                         Show client details + live status"
+echo "  sudo wg-remove-client <name>                       Remove a client peer"
+echo "  sudo wg-reset-clients                              Remove ALL clients (full reset)"
+echo "  wg-hub-help                                        Show this help message"
+echo ""
+echo "Configuration:"
+echo "  Config file:  $CONFIG_FILE"
+echo "  Edit config:  sudo nano $CONFIG_FILE"
+echo ""
+echo "Note: If you add extra subnets to CLIENT_ALLOWED_IPS (e.g. 192.168.200.0/24),"
+echo "      make sure to also include the VPN subnet (e.g. 10.50.0.0/24) so clients"
+echo "      can reach each other."
+echo ""
