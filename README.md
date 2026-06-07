@@ -175,6 +175,7 @@ On your phone:
 /usr/local/sbin/wg-show-client          Show client details
 /usr/local/sbin/wg-remove-client        Remove a client
 /usr/local/sbin/wg-reset-clients       Remove all clients (full reset)
+/usr/local/sbin/wg-hub-help            Show help and available commands
 /etc/wireguard/clients/                 Generated client configs
 /etc/wireguard/clients/registry.tsv     Client registry
 ```

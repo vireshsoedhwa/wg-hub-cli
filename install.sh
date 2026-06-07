@@ -15,6 +15,7 @@ BIN_LIST="/usr/local/sbin/wg-list-clients"
 BIN_SHOW="/usr/local/sbin/wg-show-client"
 BIN_REMOVE="/usr/local/sbin/wg-remove-client"
 BIN_RESET="/usr/local/sbin/wg-reset-clients"
+BIN_HELP="/usr/local/sbin/wg-hub-help"
 CLIENT_DIR="/etc/wireguard/clients"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -213,6 +214,10 @@ install_bin() {
     cp "${SCRIPT_DIR}/bin/wg-reset-clients" "$BIN_RESET"
     chmod 755 "$BIN_RESET"
     info "Installed command: $BIN_RESET"
+
+    cp "${SCRIPT_DIR}/bin/wg-hub-help" "$BIN_HELP"
+    chmod 755 "$BIN_HELP"
+    info "Installed command: $BIN_HELP"
 }
 
 create_client_dir() {
@@ -257,6 +262,7 @@ main() {
     echo "  sudo wg-show-client <name>                         Show client details + live status"
     echo "  sudo wg-remove-client <name>                       Remove a client peer"
     echo "  sudo wg-reset-clients                              Remove ALL clients (full reset)"
+    echo "  wg-hub-help                                          Show this help message"
     echo ""
 }
 
